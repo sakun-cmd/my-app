@@ -1,0 +1,79 @@
+{
+  "races": {
+    "table": "races",
+    "columns": {
+      "source_id": "id",
+      "race_date": "race_date",
+      "venue_code": "venue_code",
+      "venue_name": "venue_name",
+      "race_number": "race_number",
+      "scheduled_at": "scheduled_at",
+      "grade": "grade",
+      "distance_m": "distance_m",
+      "updated_at": "updated_at"
+    }
+  },
+  "entries": {
+    "table": "entries",
+    "columns": {
+      "race_source_id": "race_id",
+      "lane": "lane",
+      "racer_registration_number": "racer_id",
+      "racer_name": "racer_name",
+      "class_name": "class_name",
+      "motor_number": "motor_number",
+      "boat_number": "boat_number",
+      "weight_kg": "weight_kg"
+    }
+  },
+  "exhibitions": {
+    "table": "exhibitions",
+    "columns": {
+      "race_source_id": "race_id",
+      "lane": "lane",
+      "exhibition_course": "exhibition_course",
+      "exhibition_start_timing": "exhibition_start_timing",
+      "exhibition_time_seconds": "exhibition_time_seconds",
+      "tilt": "tilt",
+      "half_lap_time_seconds": "half_lap_time_seconds",
+      "lap_time_seconds": "lap_time_seconds",
+      "cornering_time_seconds": "cornering_time_seconds",
+      "straight_time_seconds": "straight_time_seconds",
+      "observed_at": "observed_at"
+    }
+  },
+  "weather": {
+    "table": "weather",
+    "columns": {
+      "race_source_id": "race_id",
+      "weather": "weather",
+      "air_temperature_c": "air_temperature_c",
+      "water_temperature_c": "water_temperature_c",
+      "wind_direction": "wind_direction",
+      "wind_speed_mps": "wind_speed_mps",
+      "wave_height_cm": "wave_height_cm",
+      "observed_at": "observed_at"
+    }
+  },
+  "part_replacements": {
+    "table": "part_replacements",
+    "columns": {
+      "race_source_id": "race_id",
+      "lane": "lane",
+      "part_name": "part_name",
+      "quantity": "quantity",
+      "replaced_at": "replaced_at"
+    }
+  },
+  "results": {
+    "table": "results",
+    "columns": {
+      "race_source_id": "race_id",
+      "lane": "lane",
+      "finish_position": "finish_position",
+      "actual_course": "actual_course",
+      "actual_start_timing": "actual_start_timing",
+      "status": "status"
+    }
+  }
+}

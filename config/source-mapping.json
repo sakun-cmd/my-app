@@ -1,0 +1,25 @@
+{
+  "adapter": "boatrace_brd_v1",
+  "schema": "public",
+  "tables": {
+    "races": "brd_b2",
+    "entries": "brd_b3",
+    "weather": "brd_c2",
+    "exhibitions": "brd_c3",
+    "lap_exhibitions": "brd_c4",
+    "results": "brd_k3"
+  },
+  "race_key": [
+    "kaisai_nen",
+    "kaisai_tsukihi",
+    "kyoteijo_code",
+    "race_no"
+  ],
+  "timezone": "Asia/Tokyo",
+  "observation_time_strategy": "scheduled_at",
+  "notes": [
+    "展示・気象の取得時刻は元テーブルに存在しないため、発走予定時刻を保守的なデータ締切として保存する",
+    "brd_c4の周回展示は過去分析用。LIVE当日はBoatcastを使用し、元DB値は取り込まない",
+    "brd_*テーブルは読み取り専用で参照し、元DBにDDL・DMLを発行しない"
+  ]
+}

@@ -1,0 +1,237 @@
+# =============================================================================
+# boat-analysis 永続化テンプレート
+#
+# 使い方（compose.yaml の代わりに、このファイルを明示して起動します）:
+#   docker compose -f docker-compose.persistence.yml up -d --build --remove-orphans
+#   （--remove-orphans は、compose.yaml で作られた空の db コンテナを片付けます。
+#     ボリュームは -v を付けない限り削除されません）
+#
+# 【重要】実データの所在（2026-09-21 時点の調査結果）
+#   アプリが使う boat_analysis / pckyotei（進入率スナップショット
+#   racer_course_stats_history を含む）は、Docker ではなくホストの
+#   Windows サービス PostgreSQL 16 (C:/Program Files/PostgreSQL/16/data) にあります。
+#   .env の DOCKER_DATABASE_URL / DOCKER_SOURCE_DATABASE_URL が
+#   host.docker.internal:5432 を指しているためです。
+#   compose.yaml の db (postgres:17) は空で、アプリは使っていません。
+#   そこでこのテンプレートは次の構成にしています。
+#     1. db-backup : ホストの PostgreSQL を定期的に pg_dump し、./backups に保存する
+#     2. db        : Docker 内 DB へ移行する場合のみ使う（profile local-db、通常は起動しない）
+#     3. api/web   : 再起動ポリシーとログのローテーションを追加（設定値は compose.yaml と同じ）
+#
+# .env に追加する項目（バックアップ用。値はここに書かず .env に置いてください）:
+#   BACKUP_PGUSER=...        # 省略時 postgres（ホストの PostgreSQL のロール。両DBを読める権限が必要。
+#                            #  local-db 利用時は boat）
+#   BACKUP_PGPASSWORD=...    # 必須。空だとバックアップは失敗し、db-backup が unhealthy になります
+#   BACKUP_DIR=D:/boat-backups   # 任意。データと別ドライブを推奨（同じディスクでは故障時に共倒れ）
+#   BACKUP_KEEP_DAYS=7           # 任意。保持日数（既定 7）
+#   BACKUP_DATABASES="boat_analysis pckyotei"  # 任意。空白区切り
+#
+# 復元の例（PostgreSQL 16 のツールで実行）:
+#   createdb -U postgres boat_analysis_restore
+#   pg_restore -U postgres -d boat_analysis_restore --no-owner backups/boat_analysis-YYYYMMDD-HHMMSS.dump
+# =============================================================================
+name: boat-analysis
+
+# コンテナログの無制限な肥大化を防ぎます（API は /health のアクセスも毎回記録します）。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Docker 内 DB（通常は使いません）。ホストの PostgreSQL から移行する場合だけ
+  #   docker compose -f docker-compose.persistence.yml --profile local-db up -d
+  # で起動し、.env の DOCKER_DATABASE_URL / DOCKER_SOURCE_DATABASE_URL を @db:5432 に変更します。
+  # ホストの 5432 を占有しないよう、公開ポートは 127.0.0.1:5433 にしています。
+  # 移行後は db-backup の BACKUP_PGHOST=db, BACKUP_PG_MAJOR=17 も合わせてください。
+  # ---------------------------------------------------------------------------
+  db:
+    profiles: ["local-db"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: boat_analysis
+      POSTGRES_USER: boat
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:-boat}
+      # 新規ボリュームの初期化時のみ有効（既存ボリュームには影響しません）
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      TZ: Asia/Tokyo
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - wal_compression=on
+    ports:
+      - "127.0.0.1:${LOCAL_DB_PORT:-5433}:5432"
+    volumes:
+      # ボリューム名・マウント先は compose.yaml と同一です。変更すると既存データを見失います。
+      - boat-analysis-data:/var/lib/postgresql/data
+    shm_size: 256mb
+    stop_grace_period: 2m # 停止時のチェックポイントを待つ（強制終了→クラッシュリカバリを避ける）
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U boat -d boat_analysis"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # 定期バックアップ（ホストの PostgreSQL 16 → ./backups/<DB名>-日時.dump）
+  #   - 起動直後に1回、その後 BACKUP_INTERVAL_SECONDS（既定 24 時間）ごとに実行
+  #   - pg_dump のクライアントはサーバーと同じメジャー版に合わせます（ホストは 16）
+  #   - 全DBの成功時だけ古いファイルを削除します。失敗が続いても既存のバックアップは消えません
+  #   - 失敗時は BACKUP_RETRY_SECONDS（既定 15 分）後に再試行します
+  #   - 各DBの最新バックアップが 48 時間より古いと unhealthy（docker compose ps で確認）
+  # ---------------------------------------------------------------------------
+  db-backup:
+    image: postgres:${BACKUP_PG_MAJOR:-16}-alpine
+    init: true
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -u
+        retry="$${BACKUP_RETRY_SECONDS:-900}"
+        while true; do
+          ts="$$(date +%Y%m%d-%H%M%S)"
+          ok=1
+          for db in $${BACKUP_DATABASES}; do
+            out="/backups/$${db}-$${ts}.dump"
+            if pg_dump --format=custom --no-owner --dbname="$${db}" --file="$${out}.tmp"; then
+              mv "$${out}.tmp" "$${out}"
+              echo "$$(date '+%F %T') backup ok: $${out} ($$(du -h "$${out}" | cut -f1))"
+            else
+              rm -f "$${out}.tmp"
+              echo "$$(date '+%F %T') backup FAILED: $${db}" >&2
+              ok=0
+            fi
+          done
+          find /backups -maxdepth 1 -name '*.dump.tmp' -mmin +720 -delete
+          if [ "$$ok" = 1 ]; then
+            find /backups -maxdepth 1 -name '*.dump' -mtime "+$${BACKUP_KEEP_DAYS}" -delete
+            sleep "$${BACKUP_INTERVAL_SECONDS}"
+          else
+            sleep "$${retry}"
+          fi
+        done
+    environment:
+      PGHOST: ${BACKUP_PGHOST:-host.docker.internal}
+      PGPORT: ${BACKUP_PGPORT:-5432}
+      PGUSER: ${BACKUP_PGUSER:-postgres}
+      PGPASSWORD: ${BACKUP_PGPASSWORD:-}
+      PGCONNECT_TIMEOUT: "15"
+      TZ: Asia/Tokyo
+      BACKUP_DATABASES: ${BACKUP_DATABASES:-boat_analysis pckyotei}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-900}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      BACKUP_HEALTH_MAX_AGE_MINUTES: ${BACKUP_HEALTH_MAX_AGE_MINUTES:-2880}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          for db in $$BACKUP_DATABASES; do
+            find /backups -maxdepth 1 -name "$$db-*.dump" -mmin -"$$BACKUP_HEALTH_MAX_AGE_MINUTES" | grep -q . || exit 1
+          done
+      interval: 5m
+      timeout: 30s
+      retries: 1
+      start_period: 30m
+    restart: unless-stopped
+    logging: *default-logging
+
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      # 実データはホストの PostgreSQL にあるため、通常は .env の DOCKER_DATABASE_URL
+      # （host.docker.internal:5432）を使います。既定値は Docker 内 db（local-db）向けです。
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://boat:boat@db:5432/boat_analysis}
+      SOURCE_DATABASE_URL: ${DOCKER_SOURCE_DATABASE_URL:-}
+      SOURCE_SCHEMA: ${SOURCE_SCHEMA:-public}
+      SOURCE_MAPPING_PATH: /app/config/source-mapping.json
+      API_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      APP_TIMEZONE: Asia/Tokyo
+      OFFICIAL_RESULT_FETCH_ENABLED: ${OFFICIAL_RESULT_FETCH_ENABLED:-true}
+      OFFICIAL_RESULT_DELAY_MINUTES: ${OFFICIAL_RESULT_DELAY_MINUTES:-15}
+      OFFICIAL_RESULT_RETRY_MINUTES: ${OFFICIAL_RESULT_RETRY_MINUTES:-5}
+      OFFICIAL_RESULT_POLL_SECONDS: ${OFFICIAL_RESULT_POLL_SECONDS:-60}
+      OFFICIAL_RESULT_MAX_REQUESTS_PER_REFRESH: ${OFFICIAL_RESULT_MAX_REQUESTS_PER_REFRESH:-12}
+      OFFICIAL_RESULT_REQUEST_INTERVAL_SECONDS: ${OFFICIAL_RESULT_REQUEST_INTERVAL_SECONDS:-0.5}
+      OFFICIAL_EXHIBITION_FETCH_ENABLED: ${OFFICIAL_EXHIBITION_FETCH_ENABLED:-true}
+      OFFICIAL_EXHIBITION_LEAD_MINUTES: ${OFFICIAL_EXHIBITION_LEAD_MINUTES:-5}
+      OFFICIAL_EXHIBITION_RETRY_MINUTES: ${OFFICIAL_EXHIBITION_RETRY_MINUTES:-1}
+      OFFICIAL_EXHIBITION_TIMEOUT_SECONDS: ${OFFICIAL_EXHIBITION_TIMEOUT_SECONDS:-20}
+      OFFICIAL_EXHIBITION_MAX_REQUESTS_PER_REFRESH: ${OFFICIAL_EXHIBITION_MAX_REQUESTS_PER_REFRESH:-12}
+      OFFICIAL_EXHIBITION_REQUEST_INTERVAL_SECONDS: ${OFFICIAL_EXHIBITION_REQUEST_INTERVAL_SECONDS:-1.0}
+      OFFICIAL_WIN_ODDS_FETCH_ENABLED: ${OFFICIAL_WIN_ODDS_FETCH_ENABLED:-true}
+      OFFICIAL_WIN_ODDS_LEAD_MINUTES: ${OFFICIAL_WIN_ODDS_LEAD_MINUTES:-3}
+      OFFICIAL_WIN_ODDS_RETRY_MINUTES: ${OFFICIAL_WIN_ODDS_RETRY_MINUTES:-1}
+      OFFICIAL_WIN_ODDS_TIMEOUT_SECONDS: ${OFFICIAL_WIN_ODDS_TIMEOUT_SECONDS:-20}
+      OFFICIAL_WIN_ODDS_MAX_REQUESTS_PER_REFRESH: ${OFFICIAL_WIN_ODDS_MAX_REQUESTS_PER_REFRESH:-12}
+      OFFICIAL_WIN_ODDS_REQUEST_INTERVAL_SECONDS: ${OFFICIAL_WIN_ODDS_REQUEST_INTERVAL_SECONDS:-1.0}
+      BOATCAST_LAP_FETCH_ENABLED: ${BOATCAST_LAP_FETCH_ENABLED:-true}
+      BOATCAST_LAP_TIMEOUT_SECONDS: ${BOATCAST_LAP_TIMEOUT_SECONDS:-20}
+      BOATCAST_LAP_MAX_REQUESTS_PER_REFRESH: ${BOATCAST_LAP_MAX_REQUESTS_PER_REFRESH:-12}
+      BOATCAST_LAP_REQUEST_INTERVAL_SECONDS: ${BOATCAST_LAP_REQUEST_INTERVAL_SECONDS:-1.0}
+      DAILY_EXCEL_ENABLED: ${DAILY_EXCEL_ENABLED:-true}
+      DAILY_EXCEL_HOUR_JST: ${DAILY_EXCEL_HOUR_JST:-0}
+      DAILY_EXCEL_MINUTE_JST: ${DAILY_EXCEL_MINUTE_JST:-30}
+      DAILY_EXCEL_OUTPUT_DIR: /app/exports
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config:ro
+      # 日次Excel。別ドライブへ移す場合は .env に EXPORTS_DIR=D:/boat-exports
+      - ${EXPORTS_DIR:-./exports}:/app/exports
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false # local-db を使わない通常時は待機しない
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  # 名前を変えない・external にしない限り `docker compose down -v` で消えます。
+  # `-v` は使わないでください。消えると困る場合は下の2行を有効にし、
+  # 事前に `docker volume create boat-analysis_boat-analysis-data` を実行します。
+  boat-analysis-data:
+    # external: true
+    # name: boat-analysis_boat-analysis-data
