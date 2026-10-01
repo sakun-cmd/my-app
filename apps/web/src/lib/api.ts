@@ -7,6 +7,7 @@ import type {
   SourceInspection,
   TwoBoatEvaluation,
   TwoBoatFlow,
+  TwoBoatFlowSummary,
 } from "./types";
 
 const API_BASE_URL =
@@ -62,6 +63,14 @@ export function getTwoBoatFlow(
   signal?: AbortSignal,
 ): Promise<TwoBoatFlow> {
   return request(`/api/analysis/races/${id}/two-boat-flow`, signal);
+}
+
+export function getTwoBoatFlowSummary(
+  raceDate: string,
+  signal?: AbortSignal,
+): Promise<TwoBoatFlowSummary[]> {
+  const params = new URLSearchParams({ race_date: raceDate });
+  return request(`/api/analysis/two-boat-flow/summary?${params}`, signal);
 }
 
 export function inspectSource(signal?: AbortSignal): Promise<SourceInspection> {

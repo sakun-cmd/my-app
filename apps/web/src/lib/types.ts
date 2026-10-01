@@ -193,6 +193,13 @@ export interface ImportBatch {
   };
 }
 
+export interface TwoBoatFlowSummary {
+  race_id: string;
+  has_tickets: boolean;
+  ticket_count: number;
+  hit: boolean | null;
+}
+
 export interface TwoBoatFlow {
   race_id: string;
   win_odds_source: string | null;

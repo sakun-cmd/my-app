@@ -738,7 +738,7 @@ td small.warning {
   border-bottom: 1px solid var(--line);
   display: grid;
   gap: 14px;
-  grid-template-columns: 70px minmax(100px, 1fr) 60px 90px 90px 24px;
+  grid-template-columns: 70px minmax(100px, 1fr) 60px 90px 90px 96px 74px 24px;
   padding: 14px 18px;
   transition: background 150ms ease;
 }
@@ -760,6 +760,21 @@ td small.warning {
 .live-completeness {
   color: var(--muted);
   font-size: 11px;
+}
+
+.live-ticket-flag,
+.live-hit-flag {
+  min-height: 1px;
+}
+
+.tag.hit {
+  background: #dff3e9;
+  color: #17663e;
+}
+
+.tag.miss {
+  background: #e6e8ec;
+  color: #4a5160;
 }
 
 .result-comparison {
@@ -1023,7 +1038,9 @@ footer p {
     grid-template-columns: 55px 1fr 45px;
   }
   .live-race-row .tag,
-  .live-completeness {
+  .live-completeness,
+  .live-ticket-flag,
+  .live-hit-flag {
     grid-column: span 1;
   }
   .result-comparison {

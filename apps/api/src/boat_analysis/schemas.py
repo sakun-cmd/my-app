@@ -254,6 +254,13 @@ class FlowTicket(BaseModel):
     popularity_rank: int | None
 
 
+class TwoBoatFlowSummary(BaseModel):
+    race_id: UUID
+    has_tickets: bool
+    ticket_count: int
+    hit: bool | None
+
+
 class TwoBoatFlowAnalysis(BaseModel):
     race_id: UUID
     win_odds_source: str | None

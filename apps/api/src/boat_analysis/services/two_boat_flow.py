@@ -158,6 +158,19 @@ def _popularity_ranks(
     }
 
 
+def result_winning_combination(
+    entries: list[tuple[int, int | None]],
+) -> tuple[int, int, int] | None:
+    """(艇番, 着順)の一覧から確定済み3連単の着順組み合わせを返す。"""
+    ordered = sorted(
+        (item for item in entries if item[1] is not None),
+        key=lambda item: item[1],
+    )
+    if len(ordered) < 3 or ordered[0][1] != 1:
+        return None
+    return (ordered[0][0], ordered[1][0], ordered[2][0])
+
+
 def evaluate_two_boat_flow(
     boats: list[FlowBoat],
     odds: dict[tuple[int, int, int], Decimal] | None = None,
@@ -660,7 +673,14 @@ def _win_odds_for_keys(date_from: date, date_to: date) -> dict[str, dict[int, De
 def analyze_races_two_boat_flow(
     races: list[Race],
     db: Session,
+    *,
+    include_source_baseline: bool = False,
 ) -> dict[UUID, dict[str, Any]]:
+    """当日取得した公式値を優先して2艇判定する。
+
+    `include_source_baseline`が真の場合、バックテストと同じ元DBの値だけで判定した
+    結果を`source_baseline`として併記する。
+    """
     if not races:
         return {}
     race_dates = {race.race_date for race in races}
@@ -742,7 +762,7 @@ def analyze_races_two_boat_flow(
         rows = source_rows.get(race.source_id)
         if not rows:
             continue
-        boats = [_to_boat(row) for row in rows]
+        boats = source_boats = [_to_boat(row) for row in rows]
         if official_exhibition_times.get(race.id) or boatcast_laps.get(race.id):
             boats = [
                 replace(
@@ -771,6 +791,16 @@ def analyze_races_two_boat_flow(
         result["race_id"] = race.id
         result["win_odds_source"] = win_odds_source
         result["win_odds_observed_at"] = win_odds_observed_at
+        if include_source_baseline:
+            full_odds = trifecta_odds.get(race.source_id)
+            result["source_baseline"] = {
+                "flow": evaluate_two_boat_flow(source_boats, full_odds, venue_code=race.venue_code),
+                "boats": source_boats,
+                "trifecta_odds": full_odds or {},
+                "winning_combination": result_winning_combination(
+                    [(item.lane, item.finish_position) for item in source_boats]
+                ),
+            }
         results[race.id] = result
     return results
 

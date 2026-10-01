@@ -4,6 +4,7 @@ from boat_analysis.services.two_boat_flow import (
     FlowBoat,
     _parse_win_odds,
     evaluate_two_boat_flow,
+    result_winning_combination,
 )
 
 
@@ -285,3 +286,21 @@ def test_win_popularity_ranks_zero_odds_last() -> None:
     assert metrics[1]["popularity_rank"] == 6
     assert metrics[2]["popularity_rank"] == 1
     assert metrics[6]["popularity_rank"] == 3
+
+
+def test_result_winning_combination_orders_by_finish_position() -> None:
+    entries = [(3, 2), (1, 3), (5, 1), (2, None), (4, None), (6, None)]
+
+    assert result_winning_combination(entries) == (5, 3, 1)
+
+
+def test_result_winning_combination_requires_top_three() -> None:
+    entries = [(1, 1), (2, 2), (3, None), (4, None), (5, None), (6, None)]
+
+    assert result_winning_combination(entries) is None
+
+
+def test_result_winning_combination_requires_a_first_place() -> None:
+    entries = [(1, 2), (2, 3), (3, 4), (4, None), (5, None), (6, None)]
+
+    assert result_winning_combination(entries) is None

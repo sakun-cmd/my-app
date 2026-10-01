@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -9,8 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from ..config import get_settings
 from ..database import DbSession
-from ..models import Race, RaceEntry
-from ..schemas import RaceAnalysis, TwoBoatFlowAnalysis
+from ..models import Race, RaceEntry, RaceResult
+from ..schemas import RaceAnalysis, TwoBoatFlowAnalysis, TwoBoatFlowSummary
 from ..services.racer_stats import fetch_average_start_timings
 from ..services.scoring import (
     DEFAULT_PROFILE_VERSION,
@@ -18,7 +18,11 @@ from ..services.scoring import (
     ScoringInput,
     score_entries,
 )
-from ..services.two_boat_flow import analyze_race_two_boat_flow
+from ..services.two_boat_flow import (
+    analyze_race_two_boat_flow,
+    analyze_races_two_boat_flow,
+    result_winning_combination,
+)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 logger = logging.getLogger(__name__)
@@ -89,3 +93,36 @@ def analyze_two_boat_flow(race_id: UUID, db: DbSession) -> TwoBoatFlowAnalysis:
         return TwoBoatFlowAnalysis.model_validate(analyze_race_two_boat_flow(race_id, db))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/two-boat-flow/summary", response_model=list[TwoBoatFlowSummary])
+def two_boat_flow_summary(race_date: date, db: DbSession) -> list[TwoBoatFlowSummary]:
+    races = list(
+        db.scalars(
+            select(Race)
+            .where(Race.race_date == race_date)
+            .options(selectinload(Race.result).selectinload(RaceResult.entries))
+        ).all()
+    )
+    flows = analyze_races_two_boat_flow(races, db)
+    races_by_id = {race.id: race for race in races}
+    summaries = []
+    for race_id, flow in flows.items():
+        race = races_by_id[race_id]
+        tickets = [tuple(row["combination"]) for row in flow["tickets"]]
+        hit = None
+        if tickets and race.result and race.result.finalized_at is not None:
+            winning = result_winning_combination(
+                [(item.lane, item.finish_position) for item in race.result.entries]
+            )
+            if winning is not None:
+                hit = winning in tickets
+        summaries.append(
+            TwoBoatFlowSummary(
+                race_id=race_id,
+                has_tickets=bool(tickets),
+                ticket_count=len(tickets),
+                hit=hit,
+            )
+        )
+    return summaries

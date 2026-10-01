@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -7,10 +8,13 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from boat_analysis.services.daily_excel import (
+    _comparison_row,
+    _comparison_summary,
     _flow_columns,
     build_daily_workbook,
     generate_due_daily_excel,
 )
+from boat_analysis.services.two_boat_flow import FlowBoat
 
 
 def _race_with_result(**overrides: object) -> SimpleNamespace:
@@ -88,6 +92,126 @@ def test_daily_workbook_has_one_race_per_row_and_hit_highlight() -> None:
     assert sheet["F2"].value == "的中"
     assert sheet["A2"].fill.fgColor.rgb == "00C6EFCE"
     assert workbook["説明"]["B2"].value == "2026-09-19"
+
+
+def _boat(lane: int, exhibition: str, finish: int | None = None) -> FlowBoat:
+    return FlowBoat(
+        lane=lane,
+        exhibition_time=Decimal(exhibition),
+        lap_time=Decimal("37.00"),
+        course_avg_start_rank=Decimal("3"),
+        course_avg_start_timing=None,
+        nationwide_win_rate=None,
+        course_top3_rate=None,
+        finish_position=finish,
+    )
+
+
+def _comparison_race() -> SimpleNamespace:
+    race = _race_with_result(trifecta_combination="1-2-3", trifecta_payout_yen=1200)
+    race.race_date = date(2026, 9, 19)
+    race.venue_code = "21"
+    race.venue = SimpleNamespace(name="芦屋")
+    race.race_number = 1
+    race.entries = []
+    return race
+
+
+def _live_flow(source_flow: dict, source_boats: list[FlowBoat], live_tickets: list) -> dict:
+    return {
+        "status": "review",
+        "likely_lanes": [2],
+        "escape_assessment": "likely",
+        "tickets": [{"combination": ticket} for ticket in live_tickets],
+        "steps": [],
+        "metrics": [
+            {"lane": 2, "exhibition_time": Decimal("6.70"), "lap_time": Decimal("37.00")},
+            *(
+                {"lane": b.lane, "exhibition_time": b.exhibition_time, "lap_time": b.lap_time}
+                for b in source_boats
+                if b.lane != 2
+            ),
+        ],
+        "source_baseline": {
+            "flow": source_flow,
+            "boats": source_boats,
+            "trifecta_odds": {(1, 2, 3): Decimal("15.0"), (1, 3, 2): Decimal("20.0")},
+            "winning_combination": (1, 2, 3),
+        },
+    }
+
+
+def test_comparison_row_attributes_ticket_difference_to_exhibition_gap() -> None:
+    source_boats = [_boat(lane, "6.80", lane) for lane in range(1, 7)]
+    source_flow = {
+        "status": "pass",
+        "likely_lanes": [],
+        "escape_assessment": "not_assessed",
+        "tickets": [],
+    }
+    flow = _live_flow(source_flow, source_boats, [[1, 2, 3], [1, 3, 2]])
+
+    row = _comparison_row(_comparison_race(), flow)
+
+    assert row is not None
+    assert row["展示差_艇別(実-BT)"] == "2:-0.10"
+    assert row["周回差_艇別(実-BT)"] == ""
+    assert row["判定一致"] is False
+    assert row["買い目一致"] is False
+    assert row["実のみ買い目"] == "1-2-3 / 1-3-2"
+    assert row["着順一致"] is True
+    assert row["BT的中"] is False
+    assert row["実的中判定"] == "的中"
+    assert row["的中一致"] is False
+    assert row["BT収支"] == 0
+    assert row["実収支"] == 1000
+    assert row["相違要因"] == "展示タイム差"
+
+
+def test_comparison_row_flags_payout_difference_when_both_hit() -> None:
+    source_boats = [_boat(lane, "6.80", lane) for lane in range(1, 7)]
+    tickets = [[1, 2, 3], [1, 3, 2]]
+    source_flow = {
+        "status": "review",
+        "likely_lanes": [2],
+        "escape_assessment": "likely",
+        "tickets": [{"combination": ticket} for ticket in tickets],
+    }
+    flow = _live_flow(source_flow, source_boats, tickets)
+
+    row = _comparison_row(_comparison_race(), flow)
+    summary = dict(_comparison_summary([row]))
+
+    assert row is not None
+    assert row["買い目一致"] is True
+    assert row["BT払戻額(元DBオッズ)"] == Decimal("1500")
+    assert row["実払戻額(公式払戻)"] == 1200
+    assert row["収支差(実-BT)"] == Decimal("-300")
+    assert row["相違要因"] == "オッズ・払戻差"
+    assert summary["買い目一致"] == "1/1"
+    assert summary["相違要因: オッズ・払戻差"] == 1
+
+
+def test_comparison_row_skips_flow_without_baseline() -> None:
+    assert _comparison_row(_comparison_race(), _FLOW) is None
+
+
+def test_daily_workbook_adds_comparison_sheets() -> None:
+    source_boats = [_boat(lane, "6.80", lane) for lane in range(1, 7)]
+    source_flow = {"status": "pass", "likely_lanes": [], "tickets": []}
+    row = _comparison_row(_comparison_race(), _live_flow(source_flow, source_boats, [[1, 2, 3]]))
+
+    workbook = build_daily_workbook(
+        [{"開催日": date(2026, 9, 19), "的中判定": "的中"}],
+        date(2026, 9, 19),
+        datetime(2026, 9, 20, 0, 30, tzinfo=ZoneInfo("Asia/Tokyo")),
+        [row],
+    )
+    sheet = workbook["バックテスト比較"]
+
+    assert sheet.max_row == 2
+    assert sheet["A2"].fill.fgColor.rgb == "00FFEB9C"
+    assert workbook["比較集計"]["B2"].value == 1
 
 
 def test_daily_export_runs_for_previous_day_after_configured_time() -> None:

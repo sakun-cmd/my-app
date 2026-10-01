@@ -3,9 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { dailyExcelUrl, getRaces, refreshLiveData } from "@/lib/api";
+import {
+  dailyExcelUrl,
+  getRaces,
+  getTwoBoatFlowSummary,
+  refreshLiveData,
+} from "@/lib/api";
 import { orderLiveRaces } from "@/lib/live-race-order";
-import type { ImportBatch, RaceListResponse } from "@/lib/types";
+import type { ImportBatch, RaceListResponse, TwoBoatFlowSummary } from "@/lib/types";
 import { ErrorState, LoadingState } from "./Status";
 
 const statusLabels = {
@@ -61,6 +66,9 @@ export function LiveRaceView() {
     useState<ImportBatch["official_win_odds"] | null>(null);
   const [boatcastLaps, setBoatcastLaps] =
     useState<ImportBatch["boatcast_laps"] | null>(null);
+  const [flowSummaries, setFlowSummaries] = useState<Map<string, TwoBoatFlowSummary>>(
+    new Map(),
+  );
   const orderedRaces = useMemo(
     () => (data ? orderLiveRaces(data.items) : []),
     [data],
@@ -75,8 +83,12 @@ export function LiveRaceView() {
       setOfficialExhibitions(refreshResult.official_exhibitions);
       setOfficialWinOdds(refreshResult.official_win_odds);
       setBoatcastLaps(refreshResult.boatcast_laps);
-      const races = await getRaces({ date: raceDate, pageSize: 500 });
+      const [races, flows] = await Promise.all([
+        getRaces({ date: raceDate, pageSize: 500 }),
+        getTwoBoatFlowSummary(raceDate).catch(() => [] as TwoBoatFlowSummary[]),
+      ]);
       setData(races);
+      setFlowSummaries(new Map(flows.map((item) => [item.race_id, item])));
       setLastUpdated(new Date());
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "LIVE更新に失敗しました");
@@ -169,20 +181,34 @@ export function LiveRaceView() {
         </div>
       ) : (
         <div className="live-race-list">
-          {orderedRaces.map((race) => (
-            <Link href={`/races/${race.id}`} className="live-race-row" key={race.id}>
-              <time>{displayTime(race.scheduled_at)}</time>
-              <strong>{race.venue.name}</strong>
-              <span className="live-race-number">{race.race_number}R</span>
-              <span className={`tag status-${race.status}`}>
-                {statusLabels[race.status]}
-              </span>
-              <span className="live-completeness">
-                展示 {race.data_completeness}%
-              </span>
-              <span aria-hidden="true">→</span>
-            </Link>
-          ))}
+          {orderedRaces.map((race) => {
+            const flow = flowSummaries.get(race.id);
+            return (
+              <Link href={`/races/${race.id}`} className="live-race-row" key={race.id}>
+                <time>{displayTime(race.scheduled_at)}</time>
+                <strong>{race.venue.name}</strong>
+                <span className="live-race-number">{race.race_number}R</span>
+                <span className={`tag status-${race.status}`}>
+                  {statusLabels[race.status]}
+                </span>
+                <span className="live-completeness">
+                  展示 {race.data_completeness}%
+                </span>
+                <span className="live-ticket-flag">
+                  {flow?.has_tickets && (
+                    <span className="tag" title={`買い目候補 ${flow.ticket_count}点`}>
+                      買い目あり
+                    </span>
+                  )}
+                </span>
+                <span className="live-hit-flag">
+                  {flow?.hit === true && <span className="tag hit">的中</span>}
+                  {flow?.hit === false && <span className="tag miss">不的中</span>}
+                </span>
+                <span aria-hidden="true">→</span>
+              </Link>
+            );
+          })}
         </div>
       )}
 
