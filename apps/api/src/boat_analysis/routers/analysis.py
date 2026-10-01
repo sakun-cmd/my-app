@@ -11,6 +11,7 @@ from ..config import get_settings
 from ..database import DbSession
 from ..models import Race, RaceEntry, RaceResult
 from ..schemas import RaceAnalysis, TwoBoatFlowAnalysis, TwoBoatFlowSummary
+from ..services.official_results import NO_RESULT_MARKERS
 from ..services.racer_stats import fetch_average_start_timings
 from ..services.scoring import (
     DEFAULT_PROFILE_VERSION,
@@ -112,11 +113,16 @@ def two_boat_flow_summary(race_date: date, db: DbSession) -> list[TwoBoatFlowSum
         tickets = [tuple(row["combination"]) for row in flow["tickets"]]
         hit = None
         if tickets and race.result and race.result.finalized_at is not None:
-            winning = result_winning_combination(
-                [(item.lane, item.finish_position) for item in race.result.entries]
+            refunded = (
+                race.result.trifecta_refunded
+                or race.result.winning_technique in NO_RESULT_MARKERS
             )
-            if winning is not None:
-                hit = winning in tickets
+            if not refunded:
+                winning = result_winning_combination(
+                    [(item.lane, item.finish_position) for item in race.result.entries]
+                )
+                if winning is not None:
+                    hit = winning in tickets
         summaries.append(
             TwoBoatFlowSummary(
                 race_id=race_id,
