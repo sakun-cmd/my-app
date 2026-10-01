@@ -79,18 +79,18 @@ cd apps\api
 
 ## 主なAPI
 
-| API | 用途 |
-|---|---|
-| `GET /health` | DB接続確認 |
-| `GET /api/imports/source-schema` | 元DBのテーブル・列・推定件数・統計を確認 |
-| `GET /api/races` | 開催日・場でレースを検索 |
-| `GET /api/races/{id}` | 展示データを含む6艇比較 |
-| `GET /api/analysis/races/{id}` | 説明可能な相対スコアと寄与内訳 |
-| `GET /api/analysis/races/{id}/two-boat-flow` | 2艇判定フロー、AP、買い目候補、合成オッズ |
-| `GET /api/evaluations/summary` | 日付順の過去評価 |
-| `GET /api/evaluations/two-boat-flow` | 2艇判定フローの最大90日バックテスト |
-| `GET /api/reports/daily.xlsx?race_date=YYYY-MM-DD` | 1レース1行の日次Excelを生成・ダウンロード |
-| `POST /api/imports/live-refresh` | 当日データを取込み、締切5分前の公式展示・Boatcast周回、3分前の公式単勝、15分後の公式結果を確認 |
+| API                                                | 用途                                                                                           |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `GET /health`                                      | DB接続確認                                                                                     |
+| `GET /api/imports/source-schema`                   | 元DBのテーブル・列・推定件数・統計を確認                                                       |
+| `GET /api/races`                                   | 開催日・場でレースを検索                                                                       |
+| `GET /api/races/{id}`                              | 展示データを含む6艇比較                                                                        |
+| `GET /api/analysis/races/{id}`                     | 説明可能な相対スコアと寄与内訳                                                                 |
+| `GET /api/analysis/races/{id}/two-boat-flow`       | 2艇判定フロー、AP、買い目候補、合成オッズ                                                      |
+| `GET /api/evaluations/summary`                     | 日付順の過去評価                                                                               |
+| `GET /api/evaluations/two-boat-flow`               | 2艇判定フローの最大90日バックテスト                                                            |
+| `GET /api/reports/daily.xlsx?race_date=YYYY-MM-DD` | 1レース1行の日次Excelを生成・ダウンロード                                                      |
+| `POST /api/imports/live-refresh`                   | 当日データを取込み、締切5分前の公式展示・Boatcast周回、3分前の公式単勝、15分後の公式結果を確認 |
 
 ## スコアの扱い
 
