@@ -85,6 +85,11 @@ def _flow_columns(flow: dict[str, Any] | None, race: Race) -> dict[str, Any]:
         "外艇": flow.get("outer_lane") if flow else None,
         "外の外艇": flow.get("outer_outer_lane") if flow else None,
         "イン逃げ評価": flow.get("escape_assessment") if flow else None,
+        "注意喚起": (
+            "イン逃げ注意（買い目作成なし）"
+            if flow and flow.get("escape_assessment") == "unlikely"
+            else None
+        ),
         "最終判断": flow.get("decision") if flow else None,
         "買い目": " / ".join(ticket_by_combination),
         "買い目詳細": " / ".join(
@@ -102,8 +107,9 @@ def _flow_columns(flow: dict[str, Any] | None, race: Race) -> dict[str, Any]:
         )
         if flow
         else "",
-        "単勝オッズ出典": flow.get("win_odds_source") if flow else None,
-        "単勝オッズ取得時刻": flow.get("win_odds_observed_at") if flow else None,
+        "3連単1着支持出典": flow.get("win_odds_source") if flow else None,
+        "人気順位出典": flow.get("popularity_source") if flow else None,
+        "公式3連単取得時刻": flow.get("win_odds_observed_at") if flow else None,
         "的中判定": hit_status,
         "的中買い目": winning if hit_ticket else None,
         "的中買い目オッズ": hit_ticket.get("odds") if hit_ticket else None,
@@ -156,8 +162,13 @@ def _comparison_row(race: Race, flow: dict[str, Any] | None) -> dict[str, Any] |
     live_exhibition = {lane: m.get("exhibition_time") for lane, m in live_metrics.items()}
     source_lap = {item.lane: item.lap_time for item in source_boats}
     live_lap = {lane: m.get("lap_time") for lane, m in live_metrics.items()}
+    source_start_rank = {item.lane: item.course_avg_start_rank for item in source_boats}
+    live_start_rank = {
+        lane: m.get("course_avg_start_rank") for lane, m in live_metrics.items()
+    }
     exhibition_diffs = _value_diffs(source_exhibition, live_exhibition)
     lap_diffs = _value_diffs(source_lap, live_lap)
+    start_rank_diffs = _value_diffs(source_start_rank, live_start_rank)
     half_lap_used = any(
         observation.lap_source == "race.boatcast.jp"
         and observation.half_lap_time_seconds is not None
@@ -195,7 +206,9 @@ def _comparison_row(race: Race, flow: dict[str, Any] | None) -> dict[str, Any] |
             causes.append("展示タイム差")
         if lap_diffs:
             causes.append("周回タイム差")
-        if not exhibition_diffs and not lap_diffs:
+        if start_rank_diffs:
+            causes.append("コースST再計算差")
+        if not exhibition_diffs and not lap_diffs and not start_rank_diffs:
             causes.append("判定差(入力差なし)")
     if finish_comparable and source_winning_text != official_winning_text:
         causes.append("着順データ差")
@@ -403,10 +416,10 @@ def _race_row(race: Race, flow: dict[str, Any] | None) -> dict[str, Any]:
                 f"{prefix}モーター": entry.motor_number if entry else None,
                 f"{prefix}ボート": entry.boat_number if entry else None,
                 f"{prefix}体重kg": entry.weight_kg if entry else None,
-                f"{prefix}単勝オッズ": (win_odds.win_odds if win_odds else metric.get("win_odds")),
-                f"{prefix}単勝人気": (
-                    win_odds.popularity_rank if win_odds else metric.get("popularity_rank")
+                f"{prefix}3連単1着支持換算値": (
+                    win_odds.win_odds if win_odds else metric.get("win_odds")
                 ),
+                f"{prefix}人気順位": metric.get("popularity_rank"),
                 f"{prefix}展示進入": exhibition.exhibition_course if exhibition else None,
                 f"{prefix}展示ST": exhibition.exhibition_start_timing if exhibition else None,
                 f"{prefix}展示タイム": exhibition.exhibition_time_seconds if exhibition else None,
@@ -433,6 +446,7 @@ def _race_row(race: Race, flow: dict[str, Any] | None) -> dict[str, Any]:
                 f"{prefix}コース3連率": metric.get("course_top3_rate"),
                 f"{prefix}コース進入数": metric.get("course_starts"),
                 f"{prefix}コース成績基準日": metric.get("course_stats_snapshot_date"),
+                f"{prefix}コース成績出典": metric.get("course_stats_source"),
                 f"{prefix}部品交換": replacements,
                 f"{prefix}着順": race_result.finish_position if race_result else None,
                 f"{prefix}本番進入": race_result.actual_course if race_result else None,
@@ -524,7 +538,7 @@ def build_daily_workbook(
     info.append(
         [
             "買い目",
-            "2艇判定フローを締切前に保存された展示・周回・単勝オッズから日次再計算。",
+            "2艇判定フローを締切前に保存された展示・周回・公式3連単オッズから日次再計算。",
         ]
     )
     info.append(

@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { getRaces } from "@/lib/api";
 import type { RaceListResponse } from "@/lib/types";
+import { RaceHoverPreview } from "./RaceHoverPreview";
 import { EmptyState, ErrorState, LoadingState } from "./Status";
 
 function displayTime(value: string | null) {
@@ -99,7 +99,7 @@ export function RaceList() {
       ) : (
         <div className="race-grid">
           {data.items.map((race) => (
-            <Link className="race-card" href={`/races/${race.id}`} key={race.id}>
+            <RaceHoverPreview className="race-card" race={race} key={race.id}>
               <div className="race-card-heading">
                 <span className="race-number">{race.race_number}R</span>
                 <span className={`tag status-${race.status}`}>
@@ -117,7 +117,7 @@ export function RaceList() {
                   <span style={{ width: `${race.data_completeness}%` }} />
                 </div>
               </div>
-            </Link>
+            </RaceHoverPreview>
           ))}
         </div>
       )}

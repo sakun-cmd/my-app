@@ -169,7 +169,7 @@ export function RaceAnalysisView({ raceId }: { raceId: string }) {
             <thead>
               <tr>
                 <th>艇</th>
-                <th>単勝人気</th>
+                <th>人気順位</th>
                 <th>選手</th>
                 <th>展示進入</th>
                 <th>展示ST</th>
@@ -203,7 +203,7 @@ export function RaceAnalysisView({ raceId }: { raceId: string }) {
                             {flowMetric.popularity_rank}番人気
                           </strong>
                           <small>
-                            単勝{" "}
+                            1着支持換算{" "}
                             {flowMetric.win_odds
                               ? `${Number(flowMetric.win_odds).toFixed(1)}倍`
                               : "—"}
@@ -355,7 +355,8 @@ export function RaceAnalysisView({ raceId }: { raceId: string }) {
 function TwoBoatFlowPanel({ flow }: { flow: TwoBoatFlow }) {
   const escapeLabels = {
     likely: "イン逃げ寄り",
-    unlikely: "イン不安",
+    unlikely: "イン逃げ注意",
+    low_confidence: "イン信頼不足",
     uncertain: "判定保留",
     not_assessed: "対象外",
   };
@@ -368,7 +369,11 @@ function TwoBoatFlowPanel({ flow }: { flow: TwoBoatFlow }) {
     yes: "YES",
     no: "NO",
     unknown: "不明",
+    warning: "警告",
   };
+  const noTicketWarning = ["unlikely", "low_confidence"].includes(
+    flow.escape_assessment,
+  );
   return (
     <div className="flow-panel">
       <div className="flow-summary">
@@ -389,13 +394,45 @@ function TwoBoatFlowPanel({ flow }: { flow: TwoBoatFlow }) {
           <strong>{escapeLabels[flow.escape_assessment]}</strong>
         </article>
         <article>
-          <span>候補点数 / 合成オッズ（均等払戻換算）</span>
+          <span>
+            {noTicketWarning
+              ? "対応"
+              : "候補点数 / 合成オッズ（均等払戻換算）"}
+          </span>
           <strong>
-            {flow.tickets.length}点 /{" "}
-            {flow.composite_odds ? `${Number(flow.composite_odds).toFixed(2)}倍` : "未取得"}
+            {noTicketWarning
+              ? "注意喚起のみ（買い目なし）"
+              : `${flow.tickets.length}点 / ${
+                  flow.composite_odds
+                    ? `${Number(flow.composite_odds).toFixed(2)}倍`
+                    : "未取得"
+                }`}
           </strong>
         </article>
       </div>
+      {noTicketWarning && (
+        <div className="flow-warning" role="alert">
+          <strong>
+            {flow.escape_assessment === "low_confidence"
+              ? "イン信頼不足"
+              : "イン逃げ注意"}
+          </strong>
+          <p>
+            {flow.escape_assessment === "low_confidence"
+              ? "1号艇が参考順位最下位、展示STがF、展示タイム下位に重なったため、1号艇固定の買い目候補は作成しません。"
+              : "1号艇の逃げに不安があるという統計的な注意喚起です。この判定から買い目候補は作成しません。"}
+          </p>
+        </div>
+      )}
+      {flow.likely_two_three_condition && (
+        <div className="flow-target-condition" role="status">
+          <strong>1-2-3 / 1-3-2参考条件に該当</strong>
+          <p>
+            注目艇が2・3号艇、イン評価likely、全国勝率順位が1号艇2位以内、
+            2・3号艇4位以内です。LIVE検証では利益優位性を確認できていません。
+          </p>
+        </div>
+      )}
       <ol className="flow-steps">
         {flow.steps.map((step) => (
           <li key={step.number}>
@@ -410,8 +447,8 @@ function TwoBoatFlowPanel({ flow }: { flow: TwoBoatFlow }) {
           <thead>
             <tr>
               <th>艇</th>
-              <th>単勝人気</th>
-              <th>締切単勝</th>
+              <th>人気順位</th>
+              <th>3連単1着支持換算値</th>
               <th>展示順位（補正後）</th>
               <th>一周順位（補正後）</th>
               <th>平均ST順位</th>
@@ -420,6 +457,7 @@ function TwoBoatFlowPanel({ flow }: { flow: TwoBoatFlow }) {
               <th>コース3連率</th>
               <th>進入数</th>
               <th>履歴基準日</th>
+              <th>履歴出典</th>
               <th>AP</th>
             </tr>
           </thead>
@@ -461,6 +499,11 @@ function TwoBoatFlowPanel({ flow }: { flow: TwoBoatFlow }) {
                 </td>
                 <td>{metric.course_starts ?? "—"}</td>
                 <td>{metric.course_stats_snapshot_date ?? "—"}</td>
+                <td>
+                  {metric.course_stats_source === "source_raw_results_365d"
+                    ? "個別結果・過去365日"
+                    : metric.course_stats_source ?? "—"}
+                </td>
                 <td>{metric.ap ? "あり" : "—"}</td>
               </tr>
             ))}
@@ -468,9 +511,21 @@ function TwoBoatFlowPanel({ flow }: { flow: TwoBoatFlow }) {
         </table>
       </div>
       <p className="odds-source-note">
-        単勝人気:{" "}
+        コース成績は対象日より前の個別結果を過去365日分再集計しています。
+        10進入未満は平均ST・順位・3連率を判定に使用しません。
+      </p>
+      <p className="odds-source-note">
+        人気順位:{" "}
+        {flow.popularity_source === "official_trifecta"
+          ? "BOAT RACE公式3連単（各艇1着の20通りを逆オッズ合計）"
+            : flow.popularity_source === "source_database"
+              ? "元DBの締切単勝オッズ順（過去レース）"
+              : "公式取得時刻前または未取得"}
+      </p>
+      <p className="odds-source-note">
+        3連単1着支持換算値:{" "}
         {flow.win_odds_source === "boatrace.jp"
-          ? `BOAT RACE公式（締切3分前から取得${
+          ? `BOAT RACE公式3連単120通りから算出（締切3分前から取得${
               flow.win_odds_observed_at
                 ? `・${new Date(flow.win_odds_observed_at).toLocaleTimeString(
                     "ja-JP",
