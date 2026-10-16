@@ -34,6 +34,10 @@ RESULT_HTML = """
     <table>
       <thead><tr><th>勝式</th><th>組番</th><th>払戻金</th><th>人気</th></tr></thead>
       <tbody><tr><td>3連単</td><td>1 - 3 - 6</td><td>￥1,830</td><td>12</td></tr></tbody>
+      <tbody><tr><td rowspan="2">単勝</td><td><span>1</span></td><td><span>&yen;150</span></td><td></td></tr>
+        <tr><td>&nbsp;</td><td></td><td></td></tr></tbody>
+      <tbody><tr><td rowspan="2">複勝</td><td><span>1</span></td><td>&yen;110</td><td></td></tr>
+        <tr><td><span>3</span></td><td>&yen;130</td><td></td></tr></tbody>
     </table>
   </body>
 </html>
@@ -60,6 +64,19 @@ def test_parse_official_result() -> None:
     assert result.trifecta_combination == (1, 3, 6)
     assert result.trifecta_payout_yen == 1830
     assert result.trifecta_popularity_rank == 12
+    assert result.win_lane == 1
+    assert result.win_payout_yen == 150
+    assert result.place_payouts == ((1, 110), (3, 130))
+
+
+def test_result_without_win_row_leaves_win_empty() -> None:
+    no_win = RESULT_HTML.split("<tbody><tr><td rowspan=\"2\">単勝</td>")[0] + "</table></body></html>"
+    result = parse_official_result(no_win)
+
+    assert result is not None
+    assert result.trifecta_payout_yen == 1830
+    assert result.win_lane is None and result.win_payout_yen is None
+    assert result.place_payouts == ()
 
 
 def test_result_page_without_result_is_pending() -> None:

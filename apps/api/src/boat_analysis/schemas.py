@@ -189,6 +189,9 @@ class OfficialWinOddsRefreshOut(BaseModel):
     already_running: bool
 
 
+OfficialTrifectaOddsRefreshOut = OfficialWinOddsRefreshOut
+
+
 class BoatcastLapRefreshOut(BaseModel):
     eligible_races: int
     checked_races: int
@@ -201,6 +204,7 @@ class BoatcastLapRefreshOut(BaseModel):
 class LiveRefreshOut(ImportBatchOut):
     official_results: OfficialResultRefreshOut
     official_exhibitions: OfficialExhibitionRefreshOut
+    official_trifecta_odds: OfficialTrifectaOddsRefreshOut
     official_win_odds: OfficialWinOddsRefreshOut
     boatcast_laps: BoatcastLapRefreshOut
 
@@ -227,6 +231,8 @@ class TwoBoatMetric(BaseModel):
     lane: int
     popularity_rank: int | None
     win_odds: Decimal | None
+    reference_rank: int | None = None
+    exhibition_start_timing: Decimal | None = None
     exhibition_time: Decimal | None
     lap_time: Decimal | None
     exhibition_time_corrected: Decimal | None = None
@@ -239,6 +245,7 @@ class TwoBoatMetric(BaseModel):
     course_top3_rate: Decimal | None
     course_starts: int | None
     course_stats_snapshot_date: date | None
+    course_stats_source: str | None
     ap: bool
 
 
@@ -256,6 +263,8 @@ class FlowTicket(BaseModel):
 
 class TwoBoatFlowSummary(BaseModel):
     race_id: UUID
+    escape_assessment: str
+    likely_two_three_condition: bool
     has_tickets: bool
     ticket_count: int
     hit: bool | None
@@ -264,12 +273,14 @@ class TwoBoatFlowSummary(BaseModel):
 class TwoBoatFlowAnalysis(BaseModel):
     race_id: UUID
     win_odds_source: str | None
+    popularity_source: str | None
     win_odds_observed_at: datetime | None
     status: str
     outer_lane: int | None
     outer_outer_lane: int | None
     likely_lanes: list[int]
     escape_assessment: str
+    likely_two_three_condition: bool
     metrics: list[TwoBoatMetric]
     steps: list[FlowStep]
     tickets: list[FlowTicket]
@@ -279,8 +290,15 @@ class TwoBoatFlowAnalysis(BaseModel):
 
 
 class TwoBoatEvaluation(BaseModel):
+    data_source: str
     date_from: date
     date_to: date
+    result_available_races: int
+    live_complete_races: int
+    excluded_incomplete_live_races: int
+    official_exhibition_covered_races: int
+    boatcast_lap_covered_races: int
+    popularity_covered_races: int
     total_finalized_races: int
     gap_triggered_races: int
     insufficient_data_races: int
@@ -303,4 +321,74 @@ class TwoBoatEvaluation(BaseModel):
     snapshot_lag_days_max: int | None
     odds_covered_races: int
     flat_stake_return_rate: float | None
+    notes: list[str]
+
+
+class LabRefreshOut(BaseModel):
+    eligible_races: int
+    complete_races: int
+    predictions_created: int
+    settlements_created: int
+    already_running: bool
+
+
+class LabStrategySummary(BaseModel):
+    strategy_code: str
+    strategy_version: str
+    strategy_name: str
+    description: str
+    prediction_count: int
+    applicable_count: int
+    settled_count: int
+    hit_count: int
+    hit_rate: float | None
+    total_stake_yen: int
+    total_returned_yen: int
+    profit_yen: int
+    return_rate: float | None
+    max_payout_excluded_return_rate: float | None
+
+
+class LabTicketOut(BaseModel):
+    combination: tuple[int, int, int]
+    stake_yen: int
+
+
+class LabSettlementOut(BaseModel):
+    winning_combination: str | None
+    refunded: bool
+    hit: bool | None
+    stake_yen: int
+    returned_yen: int
+    profit_yen: int
+    settled_at: datetime
+
+
+class LabPredictionOut(BaseModel):
+    prediction_id: UUID
+    race_id: UUID
+    race_date: date
+    venue_code: str
+    venue_name: str
+    race_number: int
+    scheduled_at: datetime | None
+    strategy_code: str
+    strategy_version: str
+    strategy_name: str
+    status: str
+    skip_reason: str | None
+    likely_lanes: list[int]
+    strong_threat_lanes: list[int]
+    threat_scores: dict[str, int]
+    tickets: list[LabTicketOut]
+    created_at: datetime
+    settlement: LabSettlementOut | None
+
+
+class LabDashboardOut(BaseModel):
+    date_from: date
+    date_to: date
+    calculated_at: datetime
+    summaries: list[LabStrategySummary]
+    recent_predictions: list[LabPredictionOut]
     notes: list[str]

@@ -4,6 +4,8 @@ import type {
   RaceListResponse,
   EvaluationSummary,
   ImportBatch,
+  LabDashboard,
+  LabRefresh,
   SourceInspection,
   TwoBoatEvaluation,
   TwoBoatFlow,
@@ -93,12 +95,33 @@ export function getEvaluation(
 }
 
 export function getTwoBoatEvaluation(
-  filters: { dateFrom: string; dateTo: string },
+  filters: {
+    dateFrom: string;
+    dateTo: string;
+    dataSource: "live_saved" | "source_database";
+  },
   signal?: AbortSignal,
 ): Promise<TwoBoatEvaluation> {
   const params = new URLSearchParams({
     date_from: filters.dateFrom,
     date_to: filters.dateTo,
+    data_source: filters.dataSource,
   });
   return request(`/api/evaluations/two-boat-flow?${params}`, signal);
+}
+
+export function getLabDashboard(
+  filters: { dateFrom: string; dateTo: string; recentLimit?: number },
+  signal?: AbortSignal,
+): Promise<LabDashboard> {
+  const params = new URLSearchParams({
+    date_from: filters.dateFrom,
+    date_to: filters.dateTo,
+    recent_limit: String(filters.recentLimit ?? 100),
+  });
+  return request(`/api/lab/dashboard?${params}`, signal);
+}
+
+export function refreshLab(signal?: AbortSignal): Promise<LabRefresh> {
+  return request("/api/lab/refresh", signal, "POST");
 }

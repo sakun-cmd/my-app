@@ -61,11 +61,11 @@ class Race(Base):
             "official_exhibition_fetched_at",
         ),
         Index(
-            "ix_races_official_win_odds_due",
+            "ix_races_official_trifecta_odds_due",
             "race_date",
             "scheduled_at",
-            "official_win_odds_checked_at",
-            "official_win_odds_fetched_at",
+            "official_trifecta_odds_checked_at",
+            "official_trifecta_odds_fetched_at",
         ),
         Index(
             "ix_races_boatcast_lap_due",
@@ -91,6 +91,12 @@ class Race(Base):
     official_exhibition_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     official_win_odds_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     official_win_odds_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    official_trifecta_odds_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    official_trifecta_odds_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     boatcast_lap_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     boatcast_lap_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     imported_at: Mapped[datetime] = mapped_column(
@@ -105,6 +111,9 @@ class Race(Base):
         back_populates="race", order_by="WeatherObservation.observed_at"
     )
     result: Mapped["RaceResult | None"] = relationship(back_populates="race")
+    trifecta_odds_observations: Mapped[list["TrifectaOddsObservation"]] = relationship(
+        back_populates="race", order_by="TrifectaOddsObservation.observed_at"
+    )
 
 
 class Racer(Base):
@@ -190,7 +199,7 @@ class ExhibitionObservation(Base):
 class WinOddsObservation(Base):
     __tablename__ = "win_odds_observations"
     __table_args__ = (
-        UniqueConstraint("race_entry_id", "observed_at"),
+        UniqueConstraint("race_entry_id", name="uq_win_odds_entry"),
         CheckConstraint("win_odds >= 0"),
         CheckConstraint("popularity_rank BETWEEN 1 AND 6"),
         Index("ix_win_odds_entry_latest", "race_entry_id", "observed_at"),
@@ -212,6 +221,43 @@ class WinOddsObservation(Base):
     def source(self) -> str | None:
         value = (self.source_payload or {}).get("source")
         return str(value) if value else None
+
+
+class TrifectaOddsObservation(Base):
+    __tablename__ = "trifecta_odds_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "race_id",
+            "first_lane",
+            "second_lane",
+            "third_lane",
+            name="uq_trifecta_odds_race_combination",
+        ),
+        CheckConstraint("first_lane BETWEEN 1 AND 6"),
+        CheckConstraint("second_lane BETWEEN 1 AND 6"),
+        CheckConstraint("third_lane BETWEEN 1 AND 6"),
+        CheckConstraint(
+            "first_lane <> second_lane "
+            "AND first_lane <> third_lane "
+            "AND second_lane <> third_lane"
+        ),
+        CheckConstraint("odds > 0"),
+        Index("ix_trifecta_odds_race_latest", "race_id", "observed_at"),
+        {"schema": "core"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    race_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.races.id", ondelete="CASCADE")
+    )
+    first_lane: Mapped[int] = mapped_column(SmallInteger)
+    second_lane: Mapped[int] = mapped_column(SmallInteger)
+    third_lane: Mapped[int] = mapped_column(SmallInteger)
+    odds: Mapped[Decimal] = mapped_column(Numeric(8, 1))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    race: Mapped[Race] = relationship(back_populates="trifecta_odds_observations")
 
 
 class WeatherObservation(Base):
@@ -263,6 +309,12 @@ class RaceResult(Base):
     trifecta_payout_yen: Mapped[int | None] = mapped_column(Integer)
     trifecta_popularity_rank: Mapped[int | None] = mapped_column(SmallInteger)
     trifecta_refunded: Mapped[bool] = mapped_column(Boolean, default=False)
+    win_lane: Mapped[int | None] = mapped_column(SmallInteger)
+    win_payout_yen: Mapped[int | None] = mapped_column(Integer)
+    place1_lane: Mapped[int | None] = mapped_column(SmallInteger)
+    place1_payout_yen: Mapped[int | None] = mapped_column(Integer)
+    place2_lane: Mapped[int | None] = mapped_column(SmallInteger)
+    place2_payout_yen: Mapped[int | None] = mapped_column(Integer)
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source: Mapped[str | None] = mapped_column(String(40))
     race: Mapped[Race] = relationship(back_populates="result")
@@ -289,6 +341,34 @@ class ResultEntry(Base):
     actual_start_timing: Mapped[Decimal | None] = mapped_column(Numeric(5, 3))
     status: Mapped[str | None] = mapped_column(String(20))
     result: Mapped[RaceResult] = relationship(back_populates="entries")
+
+
+class RacerCourseStartStat(Base):
+    __tablename__ = "racer_course_start_stats"
+    __table_args__ = (
+        UniqueConstraint("racer_registration_number", "course_no", "snapshot_date"),
+        CheckConstraint("course_no BETWEEN 1 AND 6"),
+        CheckConstraint("starts >= 0"),
+        CheckConstraint("top3_finishes >= 0 AND top3_finishes <= starts"),
+        Index("ix_course_start_stats_snapshot", "snapshot_date"),
+        {"schema": "analytics"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    racer_registration_number: Mapped[str] = mapped_column(String(16))
+    course_no: Mapped[int] = mapped_column(SmallInteger)
+    snapshot_date: Mapped[date] = mapped_column(Date)
+    starts: Mapped[int] = mapped_column(Integer)
+    average_start_timing: Mapped[Decimal | None] = mapped_column(Numeric(5, 3))
+    average_start_rank: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    top3_finishes: Mapped[int] = mapped_column(Integer)
+    top3_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    history_from: Mapped[date] = mapped_column(Date)
+    history_through: Mapped[date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(80))
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class ScoringProfile(Base):
@@ -336,6 +416,124 @@ class PredictionItem(Base):
     warnings: Mapped[list] = mapped_column(JSON)
 
 
+class LabStrategy(Base):
+    __tablename__ = "lab_strategies"
+    __table_args__ = (
+        UniqueConstraint("code", "version"),
+        {"schema": "analytics"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(60))
+    version: Mapped[str] = mapped_column(String(20))
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class LabPrediction(Base):
+    __tablename__ = "lab_predictions"
+    __table_args__ = (
+        UniqueConstraint("race_id", "strategy_id"),
+        CheckConstraint("status IN ('ready', 'skipped')"),
+        Index("ix_lab_predictions_created", "created_at"),
+        {"schema": "analytics"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    race_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.races.id", ondelete="CASCADE")
+    )
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("analytics.lab_strategies.id")
+    )
+    data_cutoff_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16))
+    skip_reason: Mapped[str | None] = mapped_column(Text)
+    input_snapshot: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    race: Mapped[Race] = relationship()
+    strategy: Mapped[LabStrategy] = relationship()
+    tickets: Mapped[list["LabTicket"]] = relationship(
+        back_populates="prediction",
+        order_by="LabTicket.id",
+        cascade="all, delete-orphan",
+    )
+    settlement: Mapped["LabSettlement | None"] = relationship(
+        back_populates="prediction",
+        cascade="all, delete-orphan",
+    )
+
+
+class LabTicket(Base):
+    __tablename__ = "lab_tickets"
+    __table_args__ = (
+        UniqueConstraint(
+            "prediction_id",
+            "first_lane",
+            "second_lane",
+            "third_lane",
+        ),
+        CheckConstraint("first_lane BETWEEN 1 AND 6"),
+        CheckConstraint("second_lane BETWEEN 1 AND 6"),
+        CheckConstraint("third_lane BETWEEN 1 AND 6"),
+        CheckConstraint(
+            "first_lane <> second_lane "
+            "AND first_lane <> third_lane "
+            "AND second_lane <> third_lane"
+        ),
+        CheckConstraint("stake_yen > 0"),
+        {"schema": "analytics"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics.lab_predictions.id", ondelete="CASCADE")
+    )
+    first_lane: Mapped[int] = mapped_column(SmallInteger)
+    second_lane: Mapped[int] = mapped_column(SmallInteger)
+    third_lane: Mapped[int] = mapped_column(SmallInteger)
+    stake_yen: Mapped[int] = mapped_column(Integer, default=100)
+
+    prediction: Mapped[LabPrediction] = relationship(back_populates="tickets")
+
+
+class LabSettlement(Base):
+    __tablename__ = "lab_settlements"
+    __table_args__ = (
+        CheckConstraint("stake_yen >= 0"),
+        CheckConstraint("returned_yen >= 0"),
+        {"schema": "analytics"},
+    )
+
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analytics.lab_predictions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    result_finalized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    winning_combination: Mapped[str | None] = mapped_column(String(8))
+    trifecta_payout_yen: Mapped[int | None] = mapped_column(Integer)
+    refunded: Mapped[bool] = mapped_column(Boolean, default=False)
+    hit: Mapped[bool | None] = mapped_column(Boolean)
+    stake_yen: Mapped[int] = mapped_column(Integer)
+    returned_yen: Mapped[int] = mapped_column(Integer)
+    profit_yen: Mapped[int] = mapped_column(Integer)
+    settled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    prediction: Mapped[LabPrediction] = relationship(back_populates="settlement")
+
+
 class ImportBatch(Base):
     __tablename__ = "import_batches"
     __table_args__ = {"schema": "ops"}
@@ -365,3 +563,28 @@ class ImportError(Base):
     source_key: Mapped[str | None] = mapped_column(String(160))
     reason: Mapped[str] = mapped_column(Text)
     source_payload: Mapped[dict | None] = mapped_column(JSON)
+
+
+class TicketNotification(Base):
+    __tablename__ = "ticket_notifications"
+    __table_args__ = (
+        UniqueConstraint("race_id", "channel"),
+        CheckConstraint("status IN ('pending', 'sent', 'failed')"),
+        CheckConstraint("attempts >= 0"),
+        Index("ix_ticket_notifications_retry", "status", "last_attempt_at"),
+        {"schema": "ops"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    race_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.races.id", ondelete="CASCADE")
+    )
+    channel: Mapped[str] = mapped_column(String(20), default="telegram")
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    first_detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)

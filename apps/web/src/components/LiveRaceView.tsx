@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -11,6 +10,7 @@ import {
 } from "@/lib/api";
 import { orderLiveRaces } from "@/lib/live-race-order";
 import type { ImportBatch, RaceListResponse, TwoBoatFlowSummary } from "@/lib/types";
+import { RaceHoverPreview } from "./RaceHoverPreview";
 import { ErrorState, LoadingState } from "./Status";
 
 const statusLabels = {
@@ -62,8 +62,8 @@ export function LiveRaceView() {
     useState<ImportBatch["official_results"] | null>(null);
   const [officialExhibitions, setOfficialExhibitions] =
     useState<ImportBatch["official_exhibitions"] | null>(null);
-  const [officialWinOdds, setOfficialWinOdds] =
-    useState<ImportBatch["official_win_odds"] | null>(null);
+  const [officialTrifectaOdds, setOfficialTrifectaOdds] =
+    useState<ImportBatch["official_trifecta_odds"] | null>(null);
   const [boatcastLaps, setBoatcastLaps] =
     useState<ImportBatch["boatcast_laps"] | null>(null);
   const [flowSummaries, setFlowSummaries] = useState<Map<string, TwoBoatFlowSummary>>(
@@ -81,7 +81,7 @@ export function LiveRaceView() {
       const refreshResult = await refreshLiveData();
       setOfficialResults(refreshResult.official_results);
       setOfficialExhibitions(refreshResult.official_exhibitions);
-      setOfficialWinOdds(refreshResult.official_win_odds);
+      setOfficialTrifectaOdds(refreshResult.official_trifecta_odds);
       setBoatcastLaps(refreshResult.boatcast_laps);
       const [races, flows] = await Promise.all([
         getRaces({ date: raceDate, pageSize: 500 }),
@@ -134,7 +134,7 @@ export function LiveRaceView() {
         </span>
         <span>結果は締切15分後から公式取得</span>
         <span>展示は締切5分前から公式取得</span>
-        <span>単勝オッズは締切3分前から公式取得</span>
+        <span>人気順位は締切3分前の公式3連単120通りから1着支持度を算出</span>
         <span>周回展示は展示と同じ締切5分前からBoatcast取得</span>
         {officialExhibitions && (
           <span>
@@ -152,12 +152,12 @@ export function LiveRaceView() {
               ` / エラー ${officialResults.errors_count}`}
           </span>
         )}
-        {officialWinOdds && (
+        {officialTrifectaOdds && (
           <span>
-            公式単勝: 確認 {officialWinOdds.checked_races} / 取得{" "}
-            {officialWinOdds.imported_races}
-            {officialWinOdds.errors_count > 0 &&
-              ` / エラー ${officialWinOdds.errors_count}`}
+            公式3連単: 確認 {officialTrifectaOdds.checked_races} / 取得{" "}
+            {officialTrifectaOdds.imported_races}
+            {officialTrifectaOdds.errors_count > 0 &&
+              ` / エラー ${officialTrifectaOdds.errors_count}`}
           </span>
         )}
         {boatcastLaps && (
@@ -184,7 +184,7 @@ export function LiveRaceView() {
           {orderedRaces.map((race) => {
             const flow = flowSummaries.get(race.id);
             return (
-              <Link href={`/races/${race.id}`} className="live-race-row" key={race.id}>
+              <RaceHoverPreview className="live-race-row" race={race} key={race.id}>
                 <time>{displayTime(race.scheduled_at)}</time>
                 <strong>{race.venue.name}</strong>
                 <span className="live-race-number">{race.race_number}R</span>
@@ -195,25 +195,42 @@ export function LiveRaceView() {
                   展示 {race.data_completeness}%
                 </span>
                 <span className="live-ticket-flag">
-                  {flow?.has_tickets && (
-                    <span className="tag" title={`買い目候補 ${flow.ticket_count}点`}>
+                  {["unlikely", "low_confidence"].includes(
+                    flow?.escape_assessment ?? "",
+                  ) ? (
+                    <span className="tag warning" title="買い目は作成しません">
+                      {flow?.escape_assessment === "low_confidence"
+                        ? "イン信頼不足"
+                        : "イン逃げ注意"}
+                    </span>
+                  ) : flow?.has_tickets ? (
+                    <span
+                      className={`tag${
+                        flow.likely_two_three_condition ? " target-condition" : ""
+                      }`}
+                      title={
+                        flow.likely_two_three_condition
+                          ? `1-2-3 / 1-3-2参考条件に該当・買い目候補 ${flow.ticket_count}点`
+                          : `買い目候補 ${flow.ticket_count}点`
+                      }
+                    >
                       買い目あり
                     </span>
-                  )}
+                  ) : null}
                 </span>
                 <span className="live-hit-flag">
                   {flow?.hit === true && <span className="tag hit">的中</span>}
                   {flow?.hit === false && <span className="tag miss">不的中</span>}
                 </span>
                 <span aria-hidden="true">→</span>
-              </Link>
+              </RaceHoverPreview>
             );
           })}
         </div>
       )}
 
       <div className="disclaimer">
-        展示タイム・展示進入・展示ST・単勝オッズと確定結果はBOAT RACE公式サイト、
+        展示タイム・展示進入・展示ST・3連単オッズと確定結果はBOAT RACE公式サイト、
         周回展示はBoatcastから取得します。公式掲載の遅延や変更が
         あり得るため、本表示だけで購入判断を行わないでください。
       </div>

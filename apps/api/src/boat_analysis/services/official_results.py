@@ -54,6 +54,10 @@ class OfficialResult:
     trifecta_payout_yen: int | None = None
     trifecta_popularity_rank: int | None = None
     trifecta_refunded: bool = False
+    win_lane: int | None = None
+    win_payout_yen: int | None = None
+    # 複勝（2着以内の2艇）: ((艇, 払戻), ...)
+    place_payouts: tuple[tuple[int, int], ...] = ()
     void_marker: str | None = None
 
     @property
@@ -157,6 +161,45 @@ def _parse_trifecta(
     return None, None, None, False
 
 
+def _parse_win(tables: list[list[list[str]]]) -> tuple[int | None, int | None]:
+    """単勝の (1着艇, 払戻金/100円)。単勝の行が無ければ (None, None)。"""
+    payout_table = _find_table(tables, {"勝式", "組番", "払戻金", "人気"})
+    if payout_table is None:
+        return None, None
+    table, header_index = payout_table
+    for row in table[header_index + 1 :]:
+        if len(row) < 3 or _normalize_text(row[0]) != "単勝":
+            continue
+        lanes = re.findall(r"[1-6]", _normalize_text(row[1]).translate(_FULLWIDTH_DIGITS))
+        payout_digits = re.sub(r"\D", "", _normalize_text(row[2]).translate(_FULLWIDTH_DIGITS))
+        return (int(lanes[0]) if len(lanes) == 1 else None), (int(payout_digits) if payout_digits else None)
+    return None, None
+
+
+def _parse_place(tables: list[list[list[str]]]) -> tuple[tuple[int, int], ...]:
+    """複勝の ((艇, 払戻金/100円), ...)。行が「複勝」で始まり、続く行は勝式の列が無い（rowspan）。"""
+    payout_table = _find_table(tables, {"勝式", "組番", "払戻金", "人気"})
+    if payout_table is None:
+        return ()
+    table, header_index = payout_table
+    rows = table[header_index + 1 :]
+    for index, row in enumerate(rows):
+        if len(row) < 3 or _normalize_text(row[0]) != "複勝":
+            continue
+        out = []
+        for cells in [row[1:], *(r for r in rows[index + 1 : index + 3])]:
+            if len(cells) < 2:
+                break
+            lane_text = _normalize_text(cells[0]).translate(_FULLWIDTH_DIGITS)
+            if not re.fullmatch(r"[1-6]", lane_text):
+                break  # 空行または次の勝式
+            payout_digits = re.sub(r"\D", "", _normalize_text(cells[1]).translate(_FULLWIDTH_DIGITS))
+            if payout_digits:
+                out.append((int(lane_text), int(payout_digits)))
+        return tuple(out[:2])
+    return ()
+
+
 def _find_table(
     tables: list[list[list[str]]],
     required_headers: set[str],
@@ -227,6 +270,7 @@ def parse_official_result(html: str) -> OfficialResult | None:
         for lane in sorted(finish_rows)
     )
     combination, payout, popularity, refunded = _parse_trifecta(parser.tables)
+    win_lane, win_payout = _parse_win(parser.tables)
     return OfficialResult(
         winning_technique=winning_technique,
         entries=entries,
@@ -234,6 +278,9 @@ def parse_official_result(html: str) -> OfficialResult | None:
         trifecta_payout_yen=payout,
         trifecta_popularity_rank=popularity,
         trifecta_refunded=refunded,
+        win_lane=win_lane,
+        win_payout_yen=win_payout,
+        place_payouts=_parse_place(parser.tables),
     )
 
 
@@ -285,6 +332,10 @@ def _upsert_official_result(
     result.trifecta_payout_yen = parsed.trifecta_payout_yen
     result.trifecta_popularity_rank = parsed.trifecta_popularity_rank
     result.trifecta_refunded = parsed.trifecta_refunded
+    result.win_lane = parsed.win_lane
+    result.win_payout_yen = parsed.win_payout_yen
+    places = list(parsed.place_payouts) + [(None, None)] * (2 - len(parsed.place_payouts))
+    (result.place1_lane, result.place1_payout_yen), (result.place2_lane, result.place2_payout_yen) = places[:2]
     result.finalized_at = checked_at
     result.source = OFFICIAL_RESULT_SOURCE
     values = [
@@ -346,7 +397,12 @@ def refresh_official_results(
                         RaceResult.id.is_(None),
                         RaceResult.finalized_at.is_(None),
                         (
-                            RaceResult.trifecta_payout_yen.is_(None)
+                            # 3連単・単勝・複勝の払戻が未取得（単勝・複勝は後から追加した項目）
+                            or_(
+                                RaceResult.trifecta_payout_yen.is_(None),
+                                RaceResult.win_payout_yen.is_(None),
+                                RaceResult.place1_payout_yen.is_(None),
+                            )
                             & or_(
                                 RaceResult.winning_technique.is_(None),
                                 RaceResult.winning_technique.not_in(NO_RESULT_MARKERS),

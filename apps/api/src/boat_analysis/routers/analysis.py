@@ -126,6 +126,8 @@ def two_boat_flow_summary(race_date: date, db: DbSession) -> list[TwoBoatFlowSum
         summaries.append(
             TwoBoatFlowSummary(
                 race_id=race_id,
+                escape_assessment=flow["escape_assessment"],
+                likely_two_three_condition=flow.get("likely_two_three_condition", False),
                 has_tickets=bool(tickets),
                 ticket_count=len(tickets),
                 hit=hit,

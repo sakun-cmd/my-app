@@ -42,9 +42,15 @@ def test_two_boat_flow_summary_ignores_refunded_and_no_result_races(
     monkeypatch.setattr(
         analysis,
         "analyze_races_two_boat_flow",
-        lambda _races, _db: {race_id: {"tickets": [{"combination": [1, 2, 3]}]}},
+        lambda _races, _db: {
+            race_id: {
+                "escape_assessment": "likely",
+                "tickets": [{"combination": [1, 2, 3]}],
+            }
+        },
     )
 
     summaries = analysis.two_boat_flow_summary(date(2026, 10, 1), db)
 
     assert summaries[0].hit is expected_hit
+    assert summaries[0].escape_assessment == "likely"

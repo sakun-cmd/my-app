@@ -55,6 +55,23 @@ def test_finished_race_without_hit_is_still_a_loss() -> None:
     assert columns["収支_各100円"] == -100
 
 
+def test_unlikely_flow_is_exported_as_warning_without_stake() -> None:
+    flow = {
+        "status": "review",
+        "escape_assessment": "unlikely",
+        "tickets": [],
+        "steps": [],
+    }
+
+    columns = _flow_columns(flow, _race_with_result())
+
+    assert columns["注意喚起"] == "イン逃げ注意（買い目作成なし）"
+    assert columns["買い目"] == ""
+    assert columns["買い目数"] == 0
+    assert columns["投資額_各100円"] == 0
+    assert columns["的中判定"] == "買い目なし"
+
+
 def test_daily_workbook_has_one_race_per_row_and_hit_highlight() -> None:
     rows = [
         {
@@ -125,9 +142,19 @@ def _live_flow(source_flow: dict, source_boats: list[FlowBoat], live_tickets: li
         "tickets": [{"combination": ticket} for ticket in live_tickets],
         "steps": [],
         "metrics": [
-            {"lane": 2, "exhibition_time": Decimal("6.70"), "lap_time": Decimal("37.00")},
+            {
+                "lane": 2,
+                "exhibition_time": Decimal("6.70"),
+                "lap_time": Decimal("37.00"),
+                "course_avg_start_rank": source_boats[1].course_avg_start_rank,
+            },
             *(
-                {"lane": b.lane, "exhibition_time": b.exhibition_time, "lap_time": b.lap_time}
+                {
+                    "lane": b.lane,
+                    "exhibition_time": b.exhibition_time,
+                    "lap_time": b.lap_time,
+                    "course_avg_start_rank": b.course_avg_start_rank,
+                }
                 for b in source_boats
                 if b.lane != 2
             ),
@@ -166,6 +193,24 @@ def test_comparison_row_attributes_ticket_difference_to_exhibition_gap() -> None
     assert row["BT収支"] == 0
     assert row["実収支"] == 1000
     assert row["相違要因"] == "展示タイム差"
+
+
+def test_comparison_row_attributes_decision_difference_to_recalculated_course_stats() -> None:
+    source_boats = [_boat(lane, "6.80", lane) for lane in range(1, 7)]
+    source_flow = {
+        "status": "pass",
+        "likely_lanes": [],
+        "escape_assessment": "not_assessed",
+        "tickets": [],
+    }
+    flow = _live_flow(source_flow, source_boats, [[1, 2, 3]])
+    for metric in flow["metrics"]:
+        metric["course_avg_start_rank"] = Decimal("2.50")
+
+    row = _comparison_row(_comparison_race(), flow)
+
+    assert row is not None
+    assert row["相違要因"] == "展示タイム差 / コースST再計算差"
 
 
 def test_comparison_row_flags_payout_difference_when_both_hit() -> None:

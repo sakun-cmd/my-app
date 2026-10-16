@@ -183,6 +183,14 @@ export interface ImportBatch {
     errors_count: number;
     already_running: boolean;
   };
+  official_trifecta_odds: {
+    eligible_races: number;
+    checked_races: number;
+    imported_races: number;
+    pending_races: number;
+    errors_count: number;
+    already_running: boolean;
+  };
   boatcast_laps: {
     eligible_races: number;
     checked_races: number;
@@ -195,6 +203,8 @@ export interface ImportBatch {
 
 export interface TwoBoatFlowSummary {
   race_id: string;
+  escape_assessment: string;
+  likely_two_three_condition: boolean;
   has_tickets: boolean;
   ticket_count: number;
   hit: boolean | null;
@@ -203,16 +213,25 @@ export interface TwoBoatFlowSummary {
 export interface TwoBoatFlow {
   race_id: string;
   win_odds_source: string | null;
+  popularity_source: string | null;
   win_odds_observed_at: string | null;
   status: "pass" | "review";
   outer_lane: number | null;
   outer_outer_lane: number | null;
   likely_lanes: number[];
-  escape_assessment: "likely" | "unlikely" | "uncertain" | "not_assessed";
+  escape_assessment:
+    | "likely"
+    | "unlikely"
+    | "low_confidence"
+    | "uncertain"
+    | "not_assessed";
+  likely_two_three_condition: boolean;
   metrics: Array<{
     lane: number;
     popularity_rank: number | null;
     win_odds: string | null;
+    reference_rank: number | null;
+    exhibition_start_timing: string | null;
     exhibition_time: string | null;
     lap_time: string | null;
     exhibition_time_corrected: string | null;
@@ -225,6 +244,7 @@ export interface TwoBoatFlow {
     course_top3_rate: string | null;
     course_starts: number | null;
     course_stats_snapshot_date: string | null;
+    course_stats_source: string | null;
     ap: boolean;
   }>;
   steps: Array<{
@@ -243,8 +263,15 @@ export interface TwoBoatFlow {
 }
 
 export interface TwoBoatEvaluation {
+  data_source: "live_saved" | "source_database";
   date_from: string;
   date_to: string;
+  result_available_races: number;
+  live_complete_races: number;
+  excluded_incomplete_live_races: number;
+  official_exhibition_covered_races: number;
+  boatcast_lap_covered_races: number;
+  popularity_covered_races: number;
   total_finalized_races: number;
   gap_triggered_races: number;
   insufficient_data_races: number;
@@ -267,5 +294,71 @@ export interface TwoBoatEvaluation {
   snapshot_lag_days_max: number | null;
   odds_covered_races: number;
   flat_stake_return_rate: number | null;
+  notes: string[];
+}
+
+export interface LabRefresh {
+  eligible_races: number;
+  complete_races: number;
+  predictions_created: number;
+  settlements_created: number;
+  already_running: boolean;
+}
+
+export interface LabStrategySummary {
+  strategy_code: string;
+  strategy_version: string;
+  strategy_name: string;
+  description: string;
+  prediction_count: number;
+  applicable_count: number;
+  settled_count: number;
+  hit_count: number;
+  hit_rate: number | null;
+  total_stake_yen: number;
+  total_returned_yen: number;
+  profit_yen: number;
+  return_rate: number | null;
+  max_payout_excluded_return_rate: number | null;
+}
+
+export interface LabPrediction {
+  prediction_id: string;
+  race_id: string;
+  race_date: string;
+  venue_code: string;
+  venue_name: string;
+  race_number: number;
+  scheduled_at: string | null;
+  strategy_code: string;
+  strategy_version: string;
+  strategy_name: string;
+  status: "ready" | "skipped";
+  skip_reason: string | null;
+  likely_lanes: number[];
+  strong_threat_lanes: number[];
+  threat_scores: Record<string, number>;
+  tickets: Array<{
+    combination: [number, number, number];
+    stake_yen: number;
+  }>;
+  created_at: string;
+  settlement: {
+    winning_combination: string | null;
+    refunded: boolean;
+    hit: boolean | null;
+    stake_yen: number;
+    returned_yen: number;
+    profit_yen: number;
+    settled_at: string;
+  } | null;
+}
+
+export interface LabDashboard {
+  date_from: string;
+  date_to: string;
+  calculated_at: string;
+  summaries: LabStrategySummary[];
+  recent_predictions: LabPrediction[];
   notes: string[];
 }

@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -34,12 +34,48 @@ class Settings(BaseSettings):
     official_exhibition_timeout_seconds: float = 20
     official_exhibition_max_requests_per_refresh: int = 12
     official_exhibition_request_interval_seconds: float = 1.0
-    official_win_odds_fetch_enabled: bool = True
-    official_win_odds_lead_minutes: int = 3
-    official_win_odds_retry_minutes: int = 1
-    official_win_odds_timeout_seconds: float = 20
-    official_win_odds_max_requests_per_refresh: int = 12
-    official_win_odds_request_interval_seconds: float = 1.0
+    official_trifecta_odds_fetch_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "OFFICIAL_TRIFECTA_ODDS_FETCH_ENABLED",
+            "OFFICIAL_WIN_ODDS_FETCH_ENABLED",
+        ),
+    )
+    official_trifecta_odds_lead_minutes: int = Field(
+        default=3,
+        validation_alias=AliasChoices(
+            "OFFICIAL_TRIFECTA_ODDS_LEAD_MINUTES",
+            "OFFICIAL_WIN_ODDS_LEAD_MINUTES",
+        ),
+    )
+    official_trifecta_odds_retry_minutes: int = Field(
+        default=1,
+        validation_alias=AliasChoices(
+            "OFFICIAL_TRIFECTA_ODDS_RETRY_MINUTES",
+            "OFFICIAL_WIN_ODDS_RETRY_MINUTES",
+        ),
+    )
+    official_trifecta_odds_timeout_seconds: float = Field(
+        default=20,
+        validation_alias=AliasChoices(
+            "OFFICIAL_TRIFECTA_ODDS_TIMEOUT_SECONDS",
+            "OFFICIAL_WIN_ODDS_TIMEOUT_SECONDS",
+        ),
+    )
+    official_trifecta_odds_max_requests_per_refresh: int = Field(
+        default=12,
+        validation_alias=AliasChoices(
+            "OFFICIAL_TRIFECTA_ODDS_MAX_REQUESTS_PER_REFRESH",
+            "OFFICIAL_WIN_ODDS_MAX_REQUESTS_PER_REFRESH",
+        ),
+    )
+    official_trifecta_odds_request_interval_seconds: float = Field(
+        default=1.0,
+        validation_alias=AliasChoices(
+            "OFFICIAL_TRIFECTA_ODDS_REQUEST_INTERVAL_SECONDS",
+            "OFFICIAL_WIN_ODDS_REQUEST_INTERVAL_SECONDS",
+        ),
+    )
     boatcast_lap_fetch_enabled: bool = True
     boatcast_lap_timeout_seconds: float = 20
     boatcast_lap_max_requests_per_refresh: int = 12
@@ -48,6 +84,13 @@ class Settings(BaseSettings):
     daily_excel_hour_jst: int = 0
     daily_excel_minute_jst: int = 30
     daily_excel_output_dir: Path = Path("/app/exports")
+    telegram_notifications_enabled: bool = False
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = None
+    telegram_notification_timeout_seconds: float = 10
+    telegram_notification_retry_minutes: int = 5
+    telegram_notification_late_grace_minutes: int = 5
+    live_strategy_lab_enabled: bool = True
 
     @field_validator("api_cors_origins", mode="before")
     @classmethod

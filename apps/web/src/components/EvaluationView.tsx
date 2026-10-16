@@ -15,6 +15,7 @@ export function EvaluationView() {
   const [filters, setFilters] = useState({
     dateFrom: formatJstDate(monthAgo),
     dateTo: formatJstDate(yesterday),
+    dataSource: "live_saved" as "live_saved" | "source_database",
   });
   const [query, setQuery] = useState(filters);
   const [data, setData] = useState<EvaluationSummary | null>(null);
@@ -76,6 +77,21 @@ export function EvaluationView() {
               setFilters((current) => ({ ...current, dateTo: event.target.value }))
             }
           />
+        </label>
+        <label>
+          2艇判定データ
+          <select
+            value={filters.dataSource}
+            onChange={(event) =>
+              setFilters((current) => ({
+                ...current,
+                dataSource: event.target.value as "live_saved" | "source_database",
+              }))
+            }
+          >
+            <option value="live_saved">LIVE保存値</option>
+            <option value="source_database">元DB再計算</option>
+          </select>
         </label>
         <button type="submit">評価する</button>
       </form>
@@ -180,6 +196,27 @@ export function EvaluationView() {
                 />
               </div>
               <div className="notes">
+                <p>
+                  使用データ:
+                  {flowData.data_source === "live_saved"
+                    ? " LIVE保存値（公式展示・Boatcast周回・公式人気）"
+                    : " 元DBへ現行ロジックを再適用"}
+                </p>
+                {flowData.data_source === "live_saved" && (
+                  <p>
+                    公式結果{flowData.result_available_races.toLocaleString("ja-JP")}件のうち、
+                    LIVE入力が6艇分揃った
+                    {flowData.live_complete_races.toLocaleString("ja-JP")}件を評価し、
+                    不完全な
+                    {flowData.excluded_incomplete_live_races.toLocaleString("ja-JP")}
+                    件は元DB値で補完せず除外しました。公式展示充足
+                    {flowData.official_exhibition_covered_races.toLocaleString("ja-JP")}件、
+                    Boatcast充足
+                    {flowData.boatcast_lap_covered_races.toLocaleString("ja-JP")}件、
+                    人気充足
+                    {flowData.popularity_covered_races.toLocaleString("ja-JP")}件です。
+                  </p>
+                )}
                 <p>
                   確定{flowData.total_finalized_races.toLocaleString("ja-JP")}レース中、
                   展示差条件は{flowData.gap_triggered_races.toLocaleString("ja-JP")}件、

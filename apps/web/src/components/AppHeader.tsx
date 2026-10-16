@@ -15,6 +15,7 @@ export function AppHeader() {
       <nav aria-label="メインナビゲーション">
         <Link href="/">レース分析</Link>
         <Link href="/live">LIVE</Link>
+        <Link href="/lab">買い方LAB</Link>
         <Link href="/evaluation">評価</Link>
         <Link href="/data-quality">データ品質</Link>
       </nav>
